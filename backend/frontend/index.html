@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Downloader</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: radial-gradient(circle at top, #1b1142, #07070f 70%);
+      color: #f8fafc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 460px;
+      padding: 26px;
+      border-radius: 16px;
+      background: rgba(15, 15, 30, 0.94);
+      border: 1px solid rgba(139, 92, 246, 0.45);
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.22);
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      color: #c4b5fd;
+    }
+    p.sub {
+      margin: 0 0 18px;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #4c1d95;
+      background: #090913;
+      color: #fff;
+      font-size: 14px;
+      margin-bottom: 14px;
+      outline: none;
+    }
+    input:focus {
+      border-color: #38bdf8;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: bold;
+      color: #fff;
+      background: linear-gradient(90deg, #7c3aed, #2563eb);
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #93c5fd;
+      word-break: break-word;
+    }
+    a.dl-btn {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: #10b981;
+      color: #052e16;
+      font-weight: bold;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Video Downloader</h2>
+    <p class="sub">লিংক পেস্ট করুন — তৈরি হওয়া ফাইল ৫ মিনিট পর সার্ভার থেকে মুছে যাবে।</p>
+
+    <input type="url" id="videoUrl" placeholder="ভিডিও লিংক এখানে পেস্ট করুন..." required />
+    <button id="submitBtn" onclick="prepareVideo()">Download লিংক তৈরি করুন</button>
+
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const API_BASE = "https://your-service-name.onrender.com"; // আপনার Render URL বসান
+    const SUPABASE_URL = "https://chmjdkjsarlvwxiqrbvh.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_NFHSeCF9rcZXM0GAo8MaJA_kETcIBRT";
+
+    async function prepareVideo() {
+      const url = document.getElementById("videoUrl").value.trim();
+      const status = document.getElementById("status");
+      const btn = document.getElementById("submitBtn");
+
+      if (!url) {
+        status.textContent = "আগে একটি ভিডিও লিংক দিন।";
+        return;
+      }
+
+      btn.disabled = true;
+      status.textContent = "ভিডিও প্রস্তুত হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/prepare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "ভিডিও প্রস্তুত করা যায়নি।");
+        }
+
+        status.innerHTML = `
+          লিংক তৈরি হয়েছে! <b>৫ মিনিট পর</b> ফাইলটি সার্ভার থেকে ডিলিট হয়ে যাবে।<br />
+          <a class="dl-btn" href="${API_BASE}${data.downloadUrl}" target="_blank" rel="noopener">
+            ভিডিও ডাউনলোড করুন
+          </a>
+        `;
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
