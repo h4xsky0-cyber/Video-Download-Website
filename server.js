@@ -2,188 +2,219 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-const { spawn } = require("child_process");
-const { createClient } = require("@supabase/supabase-js");
+const { execFile } = require("child_process");
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const TEMP_DIR = path.join("/tmp", "temp_videos");
-const COOKIES_PATH = path.join("/tmp", "yt_cookies.txt");
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
+const MAX_FILE_SIZE = "100M";
+const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://chmjdkjsarlvwxiqrbvh.supabase.co";
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "sb_secret_b58Sdorny9iMGJThqhZS-Q_t9Z2d80y";
-const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
+const ALLOWED_YOUTUBE_HOSTS = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtu.be",
+  "youtube-nocookie.com",
+  "www.youtube-nocookie.com",
+]);
 
-if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
+fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-const rateLimit = new Map();
-function checkRateLimit(ip) {
-  const now = Date.now();
-  const records = (rateLimit.get(ip) || []).filter(t => now - t < 60000);
-  if (records.length >= 10) return false;
-  records.push(now);
-  rateLimit.set(ip, records);
-  return true;
-}
-
-function syncCookiesFile() {
+function parseYouTubeUrl(value) {
   try {
-    const rawCookies = process.env.YTDLP_COOKIES;
-    if (rawCookies && rawCookies.trim().length > 0) {
-      const normalized = rawCookies.replace(/\\n/g, "\n").trim();
-      fs.writeFileSync(COOKIES_PATH, normalized, "utf8");
-      console.log("Cookies synced");
-      return true;
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+
+    if (parsed.protocol !== "https:" || !ALLOWED_YOUTUBE_HOSTS.has(host)) {
+      return null;
     }
-  } catch (err) {
-    console.error("Cookie error:", err.message);
+
+    return parsed;
+  } catch (_) {
+    return null;
   }
-  return false;
 }
 
-async function cleanupExpired() {
+function removeExpiredFiles() {
   const now = Date.now();
-  try {
-    const files = fs.readdirSync(TEMP_DIR);
-    for (const file of files) {
-      const fp = path.join(TEMP_DIR, file);
-      try {
-        if (now - fs.statSync(fp).mtimeMs >= FIVE_MINUTES_MS) fs.unlinkSync(fp);
-      } catch {}
-    }
-    await supabase.from("downloads").delete().lt("expires_at", new Date(now).toISOString());
-  } catch {}
-}
-setInterval(cleanupExpired, 60 * 1000);
-app.use(async (req, res, next) => { await cleanupExpired(); next(); });
 
-app.get("/", (req, res) => {
+  try {
+    for (const fileName of fs.readdirSync(TEMP_DIR)) {
+      const filePath = path.join(TEMP_DIR, fileName);
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.isFile() && now - stats.mtimeMs >= FIVE_MINUTES_MS) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (_) {
+        // A file may have been removed by another request.
+      }
+    }
+  } catch (error) {
+    console.error("Temporary-file cleanup failed:", error.message);
+  }
+}
+
+const cleanupTimer = setInterval(removeExpiredFiles, 60 * 1000);
+cleanupTimer.unref();
+
+app.get("/", (_req, res) => {
   res.json({
     status: "ok",
-    message: "Premium Video Downloader API",
-    cookiesConfigured: !!(process.env.YTDLP_COOKIES && process.env.YTDLP_COOKIES.trim()),
+    message: "Video Downloader API is running",
+    downloader: "yt-dlp",
   });
 });
 
-app.post("/api/info", (req, res) => {
-  const { url } = req.body || {};
-  if (!url || !url.startsWith("http")) return res.status(400).json({ error: "সঠিক লিংক দিন" });
-
-  const hasCookies = syncCookiesFile();
-  const args = ["--no-playlist", "--no-warnings", "--dump-json", "--skip-download"];
-  if (hasCookies) args.push("--cookies", COOKIES_PATH);
-  args.push(url);
-
-  const proc = spawn("yt-dlp", args, { timeout: 30000 });
-  let out = "";
-  proc.stdout.on("data", d => (out += d));
-  proc.on("close", code => {
-    if (code !== 0) return res.status(500).json({ error: "মেটাডেটা পাওয়া যায়নি" });
-    try {
-      const info = JSON.parse(out);
-      res.json({
-        title: info.title || "Unknown",
-        duration: info.duration || 0,
-        thumbnail: info.thumbnail || "",
-        uploader: info.uploader || "",
-        platform: info.extractor || "unknown",
-      });
-    } catch {
-      res.status(500).json({ error: "পার্স এরর" });
+app.get("/health", (_req, res) => {
+  execFile("yt-dlp", ["--version"], { timeout: 10000 }, (error, stdout) => {
+    if (error) {
+      return res.status(503).json({ status: "error", message: "yt-dlp is not available" });
     }
+    return res.json({ status: "ok", ytDlpVersion: stdout.trim() });
   });
 });
 
-app.post("/api/prepare", async (req, res) => {
-  const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
-  if (!checkRateLimit(ip)) return res.status(429).json({ error: "অনেক রিকোয়েস্ট। একটু অপেক্ষা করুন।" });
+app.post("/api/prepare", (req, res) => {
+  const inputUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  const parsedUrl = parseYouTubeUrl(inputUrl);
 
-  const { url, quality = "best", audio = false } = req.body || {};
-  if (!url || !url.startsWith("http")) return res.status(400).json({ error: "সঠিক লিংক দিন" });
+  if (!parsedUrl) {
+    return res.status(400).json({
+      error: "একটি সঠিক HTTPS YouTube ভিডিও লিংক দিন।",
+    });
+  }
 
-  const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const ext = audio ? "mp3" : "mp4";
-  const fileName = `${id}.${ext}`;
-  const outputPath = path.join(TEMP_DIR, fileName);
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const outputTemplate = path.join(TEMP_DIR, `${id}.%(ext)s`);
 
-  const hasCookies = syncCookiesFile();
-
-  let format = "best[ext=mp4][filesize<100M]/best[filesize<100M]/best";
-  if (quality === "720") format = "best[height<=720][ext=mp4]/best[height<=720]/best";
-  else if (quality === "480") format = "best[height<=480][ext=mp4]/best[height<=480]/best";
-  else if (quality === "360") format = "best[height<=360][ext=mp4]/best[height<=360]/best";
-
+  // Use yt-dlp's default YouTube clients. Hard-coding android/tv/web can
+  // force clients that may require additional YouTube-issued verification data.
+  // The output extension is selected by yt-dlp rather than being forced to .mp4.
   const args = [
     "--no-playlist",
     "--no-warnings",
-    "--extractor-args", "youtube:player_client=android,tv,web",
-    "--max-filesize", "100M",
-    "-o", outputPath,
+    "--no-progress",
+    "--max-filesize",
+    MAX_FILE_SIZE,
+    "-f",
+    `best[filesize<${MAX_FILE_SIZE}]/best`,
+    "-o",
+    outputTemplate,
+    "--print",
+    "after_move:filepath",
+    parsedUrl.toString(),
   ];
 
-  if (audio) {
-    args.push("-x", "--audio-format", "mp3", "--audio-quality", "0");
-  } else {
-    args.push("-f", format);
-  }
+  execFile(
+    "yt-dlp",
+    args,
+    {
+      timeout: DOWNLOAD_TIMEOUT_MS,
+      maxBuffer: 2 * 1024 * 1024,
+      windowsHide: true,
+    },
+    (error, stdout, stderr) => {
+      const printedPath = String(stdout || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .pop();
 
-  if (hasCookies) {
-    args.push("--cookies", COOKIES_PATH);
-    console.log("Using cookies");
-  }
+      const outputPath = printedPath ? path.resolve(printedPath) : "";
+      const isInsideTempDir =
+        outputPath && path.dirname(outputPath) === path.resolve(TEMP_DIR);
+      const exists = isInsideTempDir && fs.existsSync(outputPath);
 
-  args.push(url);
+      if (error || !exists) {
+        // Remove partial files created by this request.
+        try {
+          for (const fileName of fs.readdirSync(TEMP_DIR)) {
+            if (fileName.startsWith(`${id}.`)) {
+              fs.unlinkSync(path.join(TEMP_DIR, fileName));
+            }
+          }
+        } catch (_) {}
 
-  const proc = spawn("yt-dlp", args, { timeout: 150000 });
-  let stderr = "";
-  proc.stderr.on("data", d => (stderr += d.toString()));
+        const detail = String(stderr || error?.message || "Unknown yt-dlp error")
+          .trim()
+          .slice(-700);
 
-  proc.on("close", async code => {
-    if (code !== 0 || !fs.existsSync(outputPath)) {
-      if (fs.existsSync(outputPath)) try { fs.unlinkSync(outputPath); } catch {}
-      const detail = (stderr || "Unknown error").slice(-220);
-      return res.status(500).json({ error: `ডাউনলোড ফেইল: ${detail}` });
+        console.error("yt-dlp failed:", detail);
+        return res.status(error?.killed ? 504 : 500).json({
+          error: error?.killed
+            ? "ডাউনলোডে বেশি সময় লাগছে। পরে আবার চেষ্টা করুন।"
+            : `ভিডিও প্রস্তুত করা যায়নি: ${detail || "yt-dlp কোনো ফাইল তৈরি করেনি।"}`,
+        });
+      }
+
+      const fileName = path.basename(outputPath);
+      const expiresAt = new Date(Date.now() + FIVE_MINUTES_MS).toISOString();
+      return res.json({
+        downloadUrl: `/api/file/${encodeURIComponent(fileName)}`,
+        expiresAt,
+        fileName,
+      });
     }
-
-    const expiresAt = new Date(Date.now() + FIVE_MINUTES_MS).toISOString();
-    await supabase.from("downloads").insert({
-      source_url: url,
-      file_name: fileName,
-      status: "ready",
-      expires_at: expiresAt,
-    });
-
-    res.json({
-      downloadUrl: `/api/file/${fileName}`,
-      expiresAt,
-      type: audio ? "audio" : "video",
-    });
-  });
+  );
 });
 
 app.get("/api/file/:fileName", (req, res) => {
-  const safe = path.basename(req.params.fileName);
-  const fp = path.join(TEMP_DIR, safe);
-  if (!fs.existsSync(fp)) return res.status(410).send("লিংকের মেয়াদ শেষ।");
-
-  const stat = fs.statSync(fp);
-  if (Date.now() - stat.mtimeMs >= FIVE_MINUTES_MS) {
-    try { fs.unlinkSync(fp); } catch {}
-    return res.status(410).send("মেয়াদ শেষ।");
+  const safeName = path.basename(req.params.fileName);
+  if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9]{2,5}$/.test(safeName)) {
+    return res.status(400).send("ফাইলের নাম সঠিক নয়।");
   }
 
-  const isAudio = safe.endsWith(".mp3");
-  res.setHeader("Content-Type", isAudio ? "audio/mpeg" : "video/mp4");
-  res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);
+  const filePath = path.join(TEMP_DIR, safeName);
+  let stat;
+
+  try {
+    stat = fs.statSync(filePath);
+  } catch (_) {
+    return res.status(410).send("ডাউনলোড লিংকের মেয়াদ শেষ হয়েছে বা ফাইল পাওয়া যায়নি।");
+  }
+
+  if (!stat.isFile() || Date.now() - stat.mtimeMs >= FIVE_MINUTES_MS) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (_) {}
+    return res.status(410).send("ডাউনলোড লিংকের মেয়াদ (৫ মিনিট) শেষ হয়েছে।");
+  }
+
+  const extension = path.extname(safeName).slice(1).toLowerCase();
+  const contentTypes = {
+    mp4: "video/mp4",
+    m4v: "video/mp4",
+    webm: "video/webm",
+    mkv: "video/x-matroska",
+    mov: "video/quicktime",
+    avi: "video/x-msvideo",
+    flv: "video/x-flv",
+    "3gp": "video/3gpp",
+  };
+
+  res.setHeader("Content-Type", contentTypes[extension] || "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
   res.setHeader("Content-Length", stat.size);
-  fs.createReadStream(fp).pipe(res);
+
+  const stream = fs.createReadStream(filePath);
+  stream.on("error", (streamError) => {
+    console.error("File stream failed:", streamError.message);
+    if (!res.headersSent) {
+      res.status(500).send("ফাইল পাঠাতে সমস্যা হয়েছে।");
+    } else {
+      res.destroy(streamError);
+    }
+  });
+  stream.pipe(res);
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  syncCookiesFile();
 });

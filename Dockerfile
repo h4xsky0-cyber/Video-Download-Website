@@ -1,14 +1,18 @@
 FROM node:22-slim
 
-RUN apt-get update && apt-get install -y python3 curl ca-certificates ffmpeg && \
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp && \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg && \
+    curl -fL --retry 3 --retry-delay 2 \
+      https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+      -o /usr/local/bin/yt-dlp && \
+    chmod 755 /usr/local/bin/yt-dlp && \
+    yt-dlp --version && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install --omit=dev
 COPY . .
 
+ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["sh", "-c", "yt-dlp -U || true; node server.js"]
+CMD ["node", "server.js"]
