@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-const { execFile } = require("child_process");
+const { spawn } = require("child_process");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
@@ -14,27 +14,33 @@ const TEMP_DIR = path.join("/tmp", "temp_videos");
 const COOKIES_PATH = path.join("/tmp", "yt_cookies.txt");
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
-const SUPABASE_URL =
-  process.env.SUPABASE_URL || "https://chmjdkjsarlvwxiqrbvh.supabase.co";
-const SUPABASE_SECRET_KEY =
-  process.env.SUPABASE_SECRET_KEY || "sb_secret_b58Sdorny9iMGJThqhZS-Q_t9Z2d80y";
-
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://chmjdkjsarlvwxiqrbvh.supabase.co";
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "sb_secret_b58Sdorny9iMGJThqhZS-Q_t9Z2d80y";
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
-if (!fs.existsSync(TEMP_DIR)) {
-  fs.mkdirSync(TEMP_DIR, { recursive: true });
+if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
+
+const rateLimit = new Map();
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const records = (rateLimit.get(ip) || []).filter(t => now - t < 60000);
+  if (records.length >= 10) return false;
+  records.push(now);
+  rateLimit.set(ip, records);
+  return true;
 }
 
 function syncCookiesFile() {
   try {
     const rawCookies = process.env.YTDLP_COOKIES;
     if (rawCookies && rawCookies.trim().length > 0) {
-      const normalized = rawCookies.replace(/\\n/g, "\n");
+      const normalized = rawCookies.replace(/\\n/g, "\n").trim();
       fs.writeFileSync(COOKIES_PATH, normalized, "utf8");
-      return fs.existsSync(COOKIES_PATH);
+      console.log("Cookies synced");
+      return true;
     }
   } catch (err) {
-    console.error("Cookie write error:", err.message);
+    console.error("Cookie error:", err.message);
   }
   return false;
 }
@@ -44,149 +50,140 @@ async function cleanupExpired() {
   try {
     const files = fs.readdirSync(TEMP_DIR);
     for (const file of files) {
-      const filePath = path.join(TEMP_DIR, file);
+      const fp = path.join(TEMP_DIR, file);
       try {
-        const stats = fs.statSync(filePath);
-        if (now - stats.mtimeMs >= FIVE_MINUTES_MS) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (_) {}
+        if (now - fs.statSync(fp).mtimeMs >= FIVE_MINUTES_MS) fs.unlinkSync(fp);
+      } catch {}
     }
-
-    await supabase
-      .from("downloads")
-      .delete()
-      .lt("expires_at", new Date(now).toISOString());
-  } catch (err) {
-    console.error("Cleanup error:", err.message);
-  }
+    await supabase.from("downloads").delete().lt("expires_at", new Date(now).toISOString());
+  } catch {}
 }
-
 setInterval(cleanupExpired, 60 * 1000);
-
-app.use(async (req, res, next) => {
-  await cleanupExpired();
-  next();
-});
+app.use(async (req, res, next) => { await cleanupExpired(); next(); });
 
 app.get("/", (req, res) => {
-  const hasCookies = Boolean(
-    process.env.YTDLP_COOKIES && process.env.YTDLP_COOKIES.trim()
-  );
   res.json({
     status: "ok",
-    message: "Video Downloader API is running",
-    cookiesConfigured: hasCookies,
+    message: "Premium Video Downloader API",
+    cookiesConfigured: !!(process.env.YTDLP_COOKIES && process.env.YTDLP_COOKIES.trim()),
+  });
+});
+
+app.post("/api/info", (req, res) => {
+  const { url } = req.body || {};
+  if (!url || !url.startsWith("http")) return res.status(400).json({ error: "সঠিক লিংক দিন" });
+
+  const hasCookies = syncCookiesFile();
+  const args = ["--no-playlist", "--no-warnings", "--dump-json", "--skip-download"];
+  if (hasCookies) args.push("--cookies", COOKIES_PATH);
+  args.push(url);
+
+  const proc = spawn("yt-dlp", args, { timeout: 30000 });
+  let out = "";
+  proc.stdout.on("data", d => (out += d));
+  proc.on("close", code => {
+    if (code !== 0) return res.status(500).json({ error: "মেটাডেটা পাওয়া যায়নি" });
+    try {
+      const info = JSON.parse(out);
+      res.json({
+        title: info.title || "Unknown",
+        duration: info.duration || 0,
+        thumbnail: info.thumbnail || "",
+        uploader: info.uploader || "",
+        platform: info.extractor || "unknown",
+      });
+    } catch {
+      res.status(500).json({ error: "পার্স এরর" });
+    }
   });
 });
 
 app.post("/api/prepare", async (req, res) => {
-  try {
-    const { url } = req.body || {};
-    if (!url || (!url.startsWith("http://") && !url.startsWith("https://"))) {
-      return res.status(400).json({ error: "সঠিক http/https ভিডিও লিংক দিন।" });
-    }
+  const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+  if (!checkRateLimit(ip)) return res.status(429).json({ error: "অনেক রিকোয়েস্ট। একটু অপেক্ষা করুন।" });
 
-    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const fileName = `${id}.mp4`;
-    const outputPath = path.join(TEMP_DIR, fileName);
+  const { url, quality = "best", audio = false } = req.body || {};
+  if (!url || !url.startsWith("http")) return res.status(400).json({ error: "সঠিক লিংক দিন" });
 
-    const hasCookies = syncCookiesFile();
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const ext = audio ? "mp3" : "mp4";
+  const fileName = `${id}.${ext}`;
+  const outputPath = path.join(TEMP_DIR, fileName);
 
-    const args = [
-      "--no-playlist",
-      "--no-warnings",
-      "--extractor-args",
-      "youtube:player_client=android,tv,web",
-      "-f",
-      "best[ext=mp4][filesize<100M]/best[filesize<100M]/best",
-      "--max-filesize",
-      "100M",
-    ];
+  const hasCookies = syncCookiesFile();
 
-    if (hasCookies) {
-      args.push("--cookies", COOKIES_PATH);
-    }
+  let format = "best[ext=mp4][filesize<100M]/best[filesize<100M]/best";
+  if (quality === "720") format = "best[height<=720][ext=mp4]/best[height<=720]/best";
+  else if (quality === "480") format = "best[height<=480][ext=mp4]/best[height<=480]/best";
+  else if (quality === "360") format = "best[height<=360][ext=mp4]/best[height<=360]/best";
 
-    args.push("-o", outputPath, url);
+  const args = [
+    "--no-playlist",
+    "--no-warnings",
+    "--extractor-args", "youtube:player_client=android,tv,web",
+    "--max-filesize", "100M",
+    "-o", outputPath,
+  ];
 
-    execFile("yt-dlp", args, { timeout: 120000 }, async (error, stdout, stderr) => {
-      try {
-        if (error || !fs.existsSync(outputPath)) {
-          if (fs.existsSync(outputPath)) {
-            try {
-              fs.unlinkSync(outputPath);
-            } catch (_) {}
-          }
-
-          const detail = (stderr || error?.message || "Unknown yt-dlp error")
-            .toString()
-            .trim()
-            .slice(-240);
-
-          return res.status(500).json({
-            error: `ভিডিও প্রসেস করা যায়নি: ${detail}`,
-          });
-        }
-
-        const expiresAt = new Date(Date.now() + FIVE_MINUTES_MS).toISOString();
-
-        await supabase.from("downloads").insert({
-          source_url: url,
-          file_name: fileName,
-          status: "ready",
-          expires_at: expiresAt,
-        });
-
-        return res.json({
-          downloadUrl: `/api/file/${fileName}`,
-          expiresAt,
-        });
-      } catch (innerErr) {
-        return res.status(500).json({
-          error: `সার্ভার রেসপন্স এরর: ${innerErr.message}`,
-        });
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({
-      error: `রিকোয়েস্ট প্রসেস করা যায়নি: ${err.message}`,
-    });
+  if (audio) {
+    args.push("-x", "--audio-format", "mp3", "--audio-quality", "0");
+  } else {
+    args.push("-f", format);
   }
+
+  if (hasCookies) {
+    args.push("--cookies", COOKIES_PATH);
+    console.log("Using cookies");
+  }
+
+  args.push(url);
+
+  const proc = spawn("yt-dlp", args, { timeout: 150000 });
+  let stderr = "";
+  proc.stderr.on("data", d => (stderr += d.toString()));
+
+  proc.on("close", async code => {
+    if (code !== 0 || !fs.existsSync(outputPath)) {
+      if (fs.existsSync(outputPath)) try { fs.unlinkSync(outputPath); } catch {}
+      const detail = (stderr || "Unknown error").slice(-220);
+      return res.status(500).json({ error: `ডাউনলোড ফেইল: ${detail}` });
+    }
+
+    const expiresAt = new Date(Date.now() + FIVE_MINUTES_MS).toISOString();
+    await supabase.from("downloads").insert({
+      source_url: url,
+      file_name: fileName,
+      status: "ready",
+      expires_at: expiresAt,
+    });
+
+    res.json({
+      downloadUrl: `/api/file/${fileName}`,
+      expiresAt,
+      type: audio ? "audio" : "video",
+    });
+  });
 });
 
-// সঠিকভাবে ফাইল ডাউনলোড করার রাউট (৫ মিনিটের মধ্যে)
 app.get("/api/file/:fileName", (req, res) => {
-  const safeName = path.basename(req.params.fileName);
-  const filePath = path.join(TEMP_DIR, safeName);
+  const safe = path.basename(req.params.fileName);
+  const fp = path.join(TEMP_DIR, safe);
+  if (!fs.existsSync(fp)) return res.status(410).send("লিংকের মেয়াদ শেষ।");
 
-  if (!fs.existsSync(filePath)) {
-    return res
-      .status(410)
-      .send("এই লিংকের মেয়াদ (৫ মিনিট) শেষ হয়ে গেছে বা ফাইল ডিলিট হয়ে গেছে।");
-  }
-
-  const stat = fs.statSync(filePath);
+  const stat = fs.statSync(fp);
   if (Date.now() - stat.mtimeMs >= FIVE_MINUTES_MS) {
-    try {
-      fs.unlinkSync(filePath);
-    } catch (_) {}
-    return res.status(410).send("লিংকের মেয়াদ (৫ মিনিট) শেষ হয়ে গেছে।");
+    try { fs.unlinkSync(fp); } catch {}
+    return res.status(410).send("মেয়াদ শেষ।");
   }
 
-  res.setHeader("Content-Type", "video/mp4");
-  res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
+  const isAudio = safe.endsWith(".mp3");
+  res.setHeader("Content-Type", isAudio ? "audio/mpeg" : "video/mp4");
+  res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);
   res.setHeader("Content-Length", stat.size);
-
-  const stream = fs.createReadStream(filePath);
-  stream.on("error", () => {
-    if (!res.headersSent) {
-      res.status(500).send("ফাইল পাঠাতে সমস্যা হয়েছে।");
-    }
-  });
-  stream.pipe(res);
+  fs.createReadStream(fp).pipe(res);
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  syncCookiesFile();
 });
