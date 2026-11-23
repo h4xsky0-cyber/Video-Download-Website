@@ -1,142 +1,235 @@
 <!DOCTYPE html>
 <html lang="bn">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Downloader</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: radial-gradient(circle at top, #1b1142, #07070f 70%);
-      color: #f8fafc;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 16px;
-    }
-    .card {
-      width: 100%;
-      max-width: 460px;
-      padding: 26px;
-      border-radius: 16px;
-      background: rgba(15, 15, 30, 0.94);
-      border: 1px solid rgba(139, 92, 246, 0.45);
-      box-shadow: 0 0 30px rgba(59, 130, 246, 0.22);
-    }
-    h2 {
-      margin: 0 0 8px;
-      font-size: 22px;
-      color: #c4b5fd;
-    }
-    p.sub {
-      margin: 0 0 18px;
-      font-size: 13px;
-      color: #94a3b8;
-    }
-    input {
-      width: 100%;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid #4c1d95;
-      background: #090913;
-      color: #fff;
-      font-size: 14px;
-      margin-bottom: 14px;
-      outline: none;
-    }
-    input:focus {
-      border-color: #38bdf8;
-    }
-    button {
-      width: 100%;
-      padding: 12px;
-      border: none;
-      border-radius: 10px;
-      font-size: 15px;
-      font-weight: bold;
-      color: #fff;
-      background: linear-gradient(90deg, #7c3aed, #2563eb);
-      cursor: pointer;
-    }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    #status {
-      margin-top: 16px;
-      font-size: 14px;
-      line-height: 1.5;
-      color: #93c5fd;
-      word-break: break-word;
-    }
-    a.dl-btn {
-      display: inline-block;
-      margin-top: 10px;
-      padding: 10px 16px;
-      border-radius: 8px;
-      background: #10b981;
-      color: #052e16;
-      font-weight: bold;
-      text-decoration: none;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VidGrab – সহজে ভিডিও ডাউনলোড</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{--bg:#060714;--bg2:#0b0d22;--card:rgba(20,22,46,.7);--line:rgba(255,255,255,.09);--text:#f2f4ff;--muted:#9097bd;--a:#7c5cff;--b:#22d3ee;--ok:#34d399;--err:#ff6b81}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:"Hind Siliguri",system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:radial-gradient(600px 400px at 12% -5%,rgba(124,92,255,.38),transparent 70%),
+               radial-gradient(560px 420px at 95% 8%,rgba(34,211,238,.22),transparent 70%),
+               radial-gradient(700px 500px at 50% 110%,rgba(124,92,255,.18),transparent 70%)}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+  header{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:20px;text-decoration:none;color:var(--text)}
+  .mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,var(--a),var(--b));box-shadow:0 8px 22px rgba(124,92,255,.45)}
+  .mark svg,.ic svg{width:19px;height:19px;stroke:#fff;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+  nav a{color:var(--muted);text-decoration:none;font-size:14.5px;margin-left:20px}
+  nav a:hover{color:var(--text)}
+  /* hero */
+  .hero{text-align:center;padding:48px 0 30px}
+  .hero h1{font-size:clamp(32px,7vw,58px);line-height:1.2;margin:0 auto 16px;max-width:760px;font-weight:700;letter-spacing:-.015em}
+  .grad{background:linear-gradient(90deg,#a78bfa,var(--b));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p.lead{max-width:540px;margin:0 auto 30px;color:var(--muted);font-size:17px}
+  .tool{max-width:660px;margin:0 auto;padding:14px;background:var(--card);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08)}
+  .row{display:flex;gap:10px}
+  .inputwrap{position:relative;flex:1;min-width:0}
+  .inputwrap svg{position:absolute;left:15px;top:50%;transform:translateY(-50%);width:19px;height:19px;stroke:var(--muted);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  input{width:100%;height:56px;padding:0 78px 0 44px;font:inherit;font-size:15.5px;color:var(--text);background:rgba(4,5,15,.75);border:1px solid var(--line);border-radius:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+  input::placeholder{color:#5c6290}
+  input:focus{border-color:var(--b);box-shadow:0 0 0 4px rgba(34,211,238,.14)}
+  #pasteBtn{position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:7px 13px;font:inherit;font-size:13.5px;font-weight:600;color:var(--text);background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:9px;cursor:pointer}
+  #pasteBtn:hover{background:rgba(255,255,255,.15)}
+  #submitBtn{height:56px;padding:0 26px;font:inherit;font-size:16px;font-weight:700;color:#fff;border:0;border-radius:14px;cursor:pointer;white-space:nowrap;background:linear-gradient(90deg,var(--a),var(--b));box-shadow:0 12px 30px rgba(124,92,255,.4);transition:transform .15s,box-shadow .15s}
+  #submitBtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 16px 36px rgba(34,211,238,.32)}
+  #submitBtn:disabled{opacity:.6;cursor:not-allowed}
+  :focus-visible{outline:2px solid var(--b);outline-offset:3px}
+  #result{text-align:left}
+  #result:not(:empty){margin-top:14px}
+  .msg{display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:12px;font-size:14.5px;color:#c3caff;background:rgba(124,92,255,.13);border:1px solid rgba(124,92,255,.3)}
+  .msg.error{color:#ffc4cc;background:rgba(255,107,129,.12);border-color:rgba(255,107,129,.32)}
+  .spinner{width:18px;height:18px;flex:none;border-radius:50%;border:2.5px solid rgba(255,255,255,.18);border-top-color:var(--b);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ready{padding:18px;border-radius:16px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.32)}
+  .ready .head{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ok)}
+  .tick{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--ok)}
+  .tick svg{width:14px;height:14px;stroke:#04261a;fill:none;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+  .dl{display:flex;align-items:center;justify-content:center;gap:9px;margin:14px 0;padding:14px;border-radius:12px;font-weight:700;font-size:15.5px;text-decoration:none;color:#04261a;background:linear-gradient(90deg,#34d399,#6ee7b7);box-shadow:0 10px 26px rgba(52,211,153,.3)}
+  .dl svg{width:19px;height:19px;stroke:#04261a;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+  .bar{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden}
+  .bar i{display:block;height:100%;width:100%;border-radius:3px;background:linear-gradient(90deg,var(--b),var(--ok));transition:width 1s linear}
+  .time{margin-top:9px;font-size:13.5px;color:var(--muted)}
+  .time b{color:var(--text);font-variant-numeric:tabular-nums}
+  .note{margin:16px auto 0;font-size:13.5px;color:var(--muted)}
+  /* sections */
+  section{padding:56px 0 8px}
+  h2{font-size:clamp(24px,4vw,32px);margin:0 0 8px;text-align:center}
+  .secsub{text-align:center;color:var(--muted);margin:0 auto 30px;max-width:520px}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .step,.feat{padding:22px;background:var(--card);border:1px solid var(--line);border-radius:18px}
+  .num{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;margin-bottom:12px;background:linear-gradient(135deg,var(--a),var(--b))}
+  .step h3,.feat h3{margin:0 0 4px;font-size:17px}
+  .step p,.feat p{margin:0;color:var(--muted);font-size:14.5px}
+  .feats{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .feat{display:flex;gap:16px;align-items:flex-start}
+  .ic{flex:none;width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:rgba(124,92,255,.2);border:1px solid rgba(124,92,255,.35)}
+  .ic svg{stroke:#c4b5fd;width:21px;height:21px}
+  .faq{max-width:700px;margin:0 auto}
+  details{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:10px;padding:0 18px}
+  summary{cursor:pointer;padding:16px 0;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";color:var(--b);font-size:22px;line-height:1}
+  details[open] summary::after{content:"–"}
+  details p{margin:0 0 16px;color:var(--muted);font-size:15px}
+  footer{margin-top:60px;padding:26px 0 36px;border-top:1px solid var(--line);text-align:center;color:var(--muted);font-size:13.5px}
+  @media(max-width:720px){
+    nav{display:none}
+    .row{flex-direction:column}
+    #submitBtn{width:100%}
+    .steps,.feats{grid-template-columns:1fr}
+    .hero{padding-top:26px}
+  }
+  @media(prefers-reduced-motion:reduce){*{animation-duration:3s!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
 </head>
 <body>
-  <div class="card">
-    <h2>Video Downloader</h2>
-    <p class="sub">লিংক পেস্ট করুন — তৈরি হওয়া ফাইল ৫ মিনিট পর সার্ভার থেকে মুছে যাবে।</p>
+<div class="wrap">
+  <header>
+    <a class="brand" href="#">
+      <span class="mark"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></span>VidGrab
+    </a>
+    <nav><a href="#how">কীভাবে কাজ করে</a><a href="#why">সুবিধা</a><a href="#faq">প্রশ্নোত্তর</a></nav>
+  </header>
 
-    <input type="url" id="videoUrl" placeholder="ভিডিও লিংক এখানে পেস্ট করুন..." required />
-    <button id="submitBtn" onclick="prepareVideo()">Download লিংক তৈরি করুন</button>
+  <div class="hero">
+    <h1>যেকোনো ভিডিও, <span class="grad">এক ক্লিকে</span> ডাউনলোড</h1>
+    <p class="lead">লিংক পেস্ট করুন, বাকি কাজ আমরা করে দিচ্ছি। কোনো অ্যাপ বা রেজিস্ট্রেশন ছাড়াই।</p>
 
-    <div id="status"></div>
+    <div class="tool">
+      <div class="row">
+        <div class="inputwrap">
+          <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg>
+          <input type="url" id="videoUrl" placeholder="ভিডিও লিংক এখানে পেস্ট করুন" autocomplete="off" aria-label="ভিডিও লিংক" />
+          <button id="pasteBtn" type="button">পেস্ট</button>
+        </div>
+        <button id="submitBtn" type="button">ডাউনলোড করুন</button>
+      </div>
+      <div id="result" aria-live="polite"></div>
+    </div>
+    <p class="note">ডাউনলোড করা ফাইল ৫ মিনিট পর সার্ভার থেকে নিজে থেকেই মুছে যায়।</p>
   </div>
 
-  <script>
-    const API_BASE = "https://video-download-website-e5vd.onrender.com/"; // আপনার Render URL বসান
-    const SUPABASE_URL = "https://chmjdkjsarlvwxiqrbvh.supabase.co";
-    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_NFHSeCF9rcZXM0GAo8MaJA_kETcIBRT";
+  <section id="how">
+    <h2>তিনটি ধাপেই শেষ</h2>
+    <p class="secsub">কোনো ঝামেলা নেই, এক মিনিটেই কাজ হয়ে যাবে।</p>
+    <div class="steps">
+      <div class="step"><div class="num">১</div><h3>লিংক কপি করুন</h3><p>যে ভিডিও চান, তার লিংক কপি করুন।</p></div>
+      <div class="step"><div class="num">২</div><h3>এখানে পেস্ট করুন</h3><p>বক্সে পেস্ট করে "ডাউনলোড করুন" চাপুন।</p></div>
+      <div class="step"><div class="num">৩</div><h3>ফাইল নামান</h3><p>লিংক তৈরি হলে সবুজ বাটনে চাপ দিন।</p></div>
+    </div>
+  </section>
 
-    async function prepareVideo() {
-      const url = document.getElementById("videoUrl").value.trim();
-      const status = document.getElementById("status");
-      const btn = document.getElementById("submitBtn");
+  <section id="why">
+    <h2>কেন VidGrab</h2>
+    <p class="secsub">সহজ, দ্রুত আর নিরাপদ।</p>
+    <div class="feats">
+      <div class="feat"><span class="ic"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span><div><h3>দ্রুত প্রসেসিং</h3><p>লিংক দেওয়ার কয়েক সেকেন্ডের মধ্যেই ফাইল প্রস্তুত।</p></div></div>
+      <div class="feat"><span class="ic"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></span><div><h3>প্রাইভেসি</h3><p>ফাইল ৫ মিনিট পর অটো ডিলিট হয়, কিছু জমা থাকে না।</p></div></div>
+      <div class="feat"><span class="ic"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></span><div><h3>ফোন ও কম্পিউটারে</h3><p>যেকোনো ডিভাইসের ব্রাউজারেই কাজ করে।</p></div></div>
+      <div class="feat"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><h3>রেজিস্ট্রেশন লাগে না</h3><p>লগইন ছাড়াই যত খুশি ব্যবহার করুন।</p></div></div>
+    </div>
+  </section>
 
-      if (!url) {
-        status.textContent = "আগে একটি ভিডিও লিংক দিন।";
-        return;
-      }
+  <section id="faq">
+    <h2>সাধারণ প্রশ্ন</h2>
+    <p class="secsub">&nbsp;</p>
+    <div class="faq">
+      <details><summary>ডাউনলোড লিংক কতক্ষণ থাকে?</summary><p>ফাইল তৈরির ৫ মিনিট পর সার্ভার থেকে মুছে যায়। তার আগেই ডাউনলোড করে নিন।</p></details>
+      <details><summary>প্রথমবার এত দেরি লাগছে কেন?</summary><p>সার্ভার কিছুক্ষণ ব্যবহার না হলে ঘুমিয়ে যায়। প্রথম অনুরোধে ৩০–৬০ সেকেন্ড লাগতে পারে।</p></details>
+      <details><summary>কিছু লিংকে কেন কাজ হয় না?</summary><p>প্রাইভেট ভিডিও বা লগইন লাগে এমন ভিডিও ডাউনলোড করা যায় না। পাবলিক লিংক দিয়ে আবার চেষ্টা করুন।</p></details>
+      <details><summary>যেকোনো ভিডিও নামানো কি ঠিক?</summary><p>শুধু নিজের ভিডিও বা যেগুলো নামানোর অনুমতি আছে, সেগুলোই ডাউনলোড করুন।</p></details>
+    </div>
+  </section>
 
-      btn.disabled = true;
-      status.textContent = "ভিডিও প্রস্তুত হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...";
+  <footer>© VidGrab. শুধু অনুমতি থাকা ভিডিও ডাউনলোড করুন।</footer>
+</div>
 
-      try {
-        const res = await fetch(`${API_BASE}/api/prepare`, {
+<script>
+  // আপনার Render backend URL (শেষে / দিতে হবে না)
+  const API_BASE = "https://video-download-website-e5vd.onrender.com";
+  const EXPIRY_SECONDS = 300;
+
+  const $ = (id) => document.getElementById(id);
+  const input = $("videoUrl"), btn = $("submitBtn"), result = $("result");
+  let timer = null;
+
+  function setMsg(text, cls = "", spin = false) {
+    clearInterval(timer);
+    result.innerHTML = "";
+    const d = document.createElement("div");
+    d.className = "msg " + cls;
+    if (spin) { const s = document.createElement("span"); s.className = "spinner"; d.appendChild(s); }
+    d.appendChild(document.createTextNode(text));
+    result.appendChild(d);
+  }
+  const fmt = (s) => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+
+  function showReady(href) {
+    clearInterval(timer);
+    result.innerHTML = `
+      <div class="ready">
+        <div class="head"><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></span>ফাইল প্রস্তুত!</div>
+        <a class="dl" id="dlLink" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>ভিডিও ডাউনলোড করুন
+        </a>
+        <div class="bar"><i id="barFill"></i></div>
+        <div class="time">মুছে যেতে বাকি: <b id="left">${fmt(EXPIRY_SECONDS)}</b></div>
+      </div>`;
+    $("dlLink").href = href;
+    let left = EXPIRY_SECONDS;
+    timer = setInterval(() => {
+      left--;
+      if (left <= 0) return setMsg("লিংকের মেয়াদ শেষ। নতুন লিংক তৈরি করুন।", "error");
+      $("left").textContent = fmt(left);
+      $("barFill").style.width = (left / EXPIRY_SECONDS * 100) + "%";
+    }, 1000);
+  }
+
+  async function prepareVideo() {
+    const url = input.value.trim();
+    if (!url) return setMsg("আগে একটি ভিডিও লিংক দিন।", "error");
+    try { new URL(url); } catch { return setMsg("লিংকটি সঠিক নয়। http:// বা https:// দিয়ে শুরু হতে হবে।", "error"); }
+
+    btn.disabled = true;
+    setMsg("ভিডিও প্রস্তুত হচ্ছে, একটু অপেক্ষা করুন...", "", true);
+    const base = API_BASE.replace(/\/+$/, "");
+    let to;
+    const timeout = new Promise((_, reject) => {
+      to = setTimeout(() => reject(new Error("TIMEOUT")), 180000);
+    });
+    try {
+      const res = await Promise.race([
+        fetch(base + "/api/prepare", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url }),
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || "ভিডিও প্রস্তুত করা যায়নি।");
-        }
-
-        status.innerHTML = `
-          লিংক তৈরি হয়েছে! <b>৫ মিনিট পর</b> ফাইলটি সার্ভার থেকে ডিলিট হয়ে যাবে।<br />
-          <a class="dl-btn" href="${API_BASE}${data.downloadUrl}" target="_blank" rel="noopener">
-            ভিডিও ডাউনলোড করুন
-          </a>
-        `;
-      } catch (err) {
-        status.textContent = "Error: " + err.message;
-      } finally {
-        btn.disabled = false;
-      }
+        }),
+        timeout,
+      ]);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "ভিডিও প্রস্তুত করা যায়নি।");
+      if (!data.downloadUrl) throw new Error("সার্ভার থেকে ডাউনলোড লিংক পাওয়া যায়নি।");
+      showReady(/^https?:\/\//.test(data.downloadUrl) ? data.downloadUrl : base + "/" + data.downloadUrl.replace(/^\/+/, ""));
+    } catch (err) {
+      setMsg(err.message === "TIMEOUT" ? "সময় শেষ হয়ে গেছে, আবার চেষ্টা করুন।" : "সমস্যা: " + err.message, "error");
+    } finally {
+      clearTimeout(to);
+      btn.disabled = false;
     }
-  </script>
+  }
+
+  btn.addEventListener("click", prepareVideo);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") prepareVideo(); });
+  $("pasteBtn").addEventListener("click", async () => {
+    try { input.value = (await navigator.clipboard.readText()).trim(); input.focus(); }
+    catch { setMsg("ক্লিপবোর্ড অ্যাক্সেস পাওয়া যায়নি, ম্যানুয়ালি পেস্ট করুন।", "error"); }
+  });
+</script>
 </body>
 </html>
