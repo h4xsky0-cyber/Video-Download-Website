@@ -1,22 +1,18 @@
-FROM node:22-bookworm-slim
+FROM node:22-slim
 
-# ffmpeg is kept available for media formats that need post-processing.
-# Node 22 is also enabled explicitly as yt-dlp's JavaScript runtime.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl ffmpeg && \
-    curl -fL --retry 4 --retry-delay 2 \
-      https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
-      -o /usr/local/bin/yt-dlp && \
-    chmod 755 /usr/local/bin/yt-dlp && \
-    yt-dlp --version && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 curl ca-certificates ffmpeg && \
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev
 COPY . .
 
 ENV NODE_ENV=production
-ENV PORT=3000
 EXPOSE 3000
-CMD ["node", "server.js"]
+
+# প্রতিবার চালুর সময় yt-dlp আপডেট (Facebook/YouTube প্রায়ই বদলায়)
+CMD ["sh", "-c", "yt-dlp -U || true; node server.js"]
